@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
+import os
 import gym
+
+import config
+
+from gym import wrappers
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -39,30 +44,32 @@ def random_search(env):
     episode_lengths = []
     best = 0
     params = None
-    testing_length = 100
-    permutation_count = 100
-    for _ in range(permutation_count):
+    tests_per_permutation = 100
+    number_of_permutations = 100
+    for _ in range(number_of_permutations):
         new_params = np.random.random(4)*2 - 1
         # 100 is number of times each param set is tested
-        avg_length = play_multiple_epsiodes(env, testing_length, new_params)
+        avg_length = play_multiple_epsiodes(env, tests_per_permutation, new_params)
         episode_lengths.append(avg_length)
         if avg_length > best:
+            print("New Best: {} turns".format(best))
             params = new_params
             best = avg_length
     return episode_lengths, params
 
+if __name__ == '__main__':
+    print("\nCartPole Problem: Random Search\n")
+    env = gym.make('CartPoleLong-v0')
+    episode_lengths, params = random_search(env)
 
-gym.envs.register(
-    id='CartPoleLong-v0',
-    entry_point='gym.envs.classic_control:CartPoleEnv',
-    tags={'wrapper_config.TimeLimit.max_episode_steps': 10000},
-    reward_threshold=195.0,
-)
+    save_folder = os.path.join(config.DATA_FOLDER, os.path.basename(__file__).split('.')[0], config.dateStr())
+    plt.plot(episode_lengths)
+    plt.title("Random Search: Episode Lengths")
+    plt.ylabel('Episode Lengths')
+    plt.xlabel('Permutation Number')
+    plt.show(block=False)
 
-env = gym.make('CartPoleLong-v0')
-episode_lengths, params = random_search(env)
-plt.plot(episode_lengths)
-plt.show()
-
-print("Visualised run with winning parameters: {}".format(params))
-play_multiple_epsiodes(env, 100, params, True)
+    env = wrappers.Monitor(env, save_folder, force=True)
+    plt.savefig(os.path.join(save_folder, 'random_search-episode_lengths.png'), dpi=600)
+    print("Visualising run with winning parameters: {}".format(params))
+    play_one_episode(env, params)
