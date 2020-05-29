@@ -108,13 +108,17 @@ def play_one(model, env, eps, gamma):
 
 def main():
   env = gym.make('CartPoleLong-v0')
+
+  if 'monitor' in sys.argv:
+    record=True
+
   ft = FeatureTransformer(env)
   # Learning rate set to 10e-2
   model = Model(env, ft, 10e-2)
   gamma = 0.99
 
   save_folder = config.getSaveFolder('cartpole', os.path.basename(__file__).split('.')[0])
-  if 'monitor' in sys.argv:
+  if record is True:
     env = wrappers.Monitor(env, os.path.join(save_folder, 'monitor'))
 
   N = 500
@@ -132,10 +136,10 @@ def main():
   plt.title("Total Reward vs Iteration")
   plt.ylabel("Reward")
   plt.xlabel("Iteration")
-  if 'monitor' in sys.argv:
+  if record is True:
       plt.savefig(os.path.join(save_folder, 'total_rewards.png'))
   plt.show()
-  config.plot_running_avg(totalrewards, save_folder)
+  config.plot_running_avg(totalrewards, save_folder, record)
 
 
 if __name__ == '__main__':
