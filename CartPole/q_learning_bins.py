@@ -103,11 +103,11 @@ if __name__ == '__main__':
     model = Model(env, ft)
     gamma = 0.9
 
-    save_folder = os.path.join(config.DATA_FOLDER,  os.path.basename(__file__).split('.')[0], config.dateStr())
+    save_folder = config.getSaveFolder('cartpole', os.path.basename(__file__).split('.')[0])
     
     # Save if monitor is called in cmdline arguments
     if 'monitor' in sys.argv:
-        env = wrappers.Monitor(env, save_folder)
+        env = wrappers.Monitor(env, os.path.join(save_folder, 'monitor'))
 
     N = 10000
     totalrewards = np.empty(N)

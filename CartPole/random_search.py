@@ -62,14 +62,13 @@ if __name__ == '__main__':
     env = gym.make('CartPoleLong-v0')
     episode_lengths, params = random_search(env)
 
-    save_folder = os.path.join(config.DATA_FOLDER, os.path.basename(__file__).split('.')[0], config.dateStr())
+    save_folder = config.getSaveFolder('cartpole', os.path.basename(__file__).split('.')[0])
     plt.plot(episode_lengths)
     plt.title("Random Search: Episode Lengths")
     plt.ylabel('Episode Lengths')
     plt.xlabel('Permutation Number')
     plt.show(block=False)
-
-    env = wrappers.Monitor(env, save_folder, force=True)
+    env = wrappers.Monitor(env, os.path.join(save_folder, 'monitor'), force=True)
     plt.savefig(os.path.join(save_folder, 'random_search-episode_lengths.png'), dpi=600)
     print("Visualising run with winning parameters: {}".format(params))
     play_one_episode(env, params)
