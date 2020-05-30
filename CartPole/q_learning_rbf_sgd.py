@@ -132,13 +132,7 @@ def main():
   print("Average reward for last 100 episodes:", totalrewards[-100:].mean())
   print("Total steps:", -totalrewards.sum())
 
-  plt.plot(totalrewards)
-  plt.title("Total Reward vs Iteration")
-  plt.ylabel("Reward")
-  plt.xlabel("Iteration")
-  if record is True:
-      plt.savefig(os.path.join(save_folder, 'total_rewards.png'))
-  plt.show()
+  config.plot_total_reward(totalrewards, save_folder, record)
   config.plot_running_avg(totalrewards, save_folder, record)
 
 
