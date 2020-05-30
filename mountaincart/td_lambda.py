@@ -93,7 +93,7 @@ def main():
   lambda_ = 0.7
 
   record = False
-  save_folder = config.getSaveFolder('cartpole', os.path.basename(__file__).split('.')[0])
+  save_folder = config.getSaveFolder(os.path.basename(os.path.dirname(__file__)), os.path.basename(__file__).split('.')[0])
   if 'monitor' in sys.argv:
     record = True
     env = wrappers.Monitor(env, os.path.join(save_folder, 'monitor'))

@@ -109,6 +109,7 @@ def play_one(model, env, eps, gamma):
 def main():
   env = gym.make('CartPoleLong-v0')
 
+  record = False
   if 'monitor' in sys.argv:
     record=True
 
@@ -117,7 +118,7 @@ def main():
   model = Model(env, ft, 10e-2)
   gamma = 0.99
 
-  save_folder = config.getSaveFolder('cartpole', os.path.basename(__file__).split('.')[0])
+  save_folder = config.getSaveFolder(os.path.basename(os.path.dirname(__file__)), os.path.basename(__file__).split('.')[0])
   if record is True:
     env = wrappers.Monitor(env, os.path.join(save_folder, 'monitor'))
 

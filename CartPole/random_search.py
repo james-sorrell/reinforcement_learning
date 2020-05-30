@@ -62,7 +62,7 @@ if __name__ == '__main__':
     env = gym.make('CartPoleLong-v0')
     episode_lengths, params = random_search(env)
 
-    save_folder = config.getSaveFolder('cartpole', os.path.basename(__file__).split('.')[0])
+    save_folder = config.getSaveFolder(os.path.basename(os.path.dirname(__file__)), os.path.basename(__file__).split('.')[0])
     plt.plot(episode_lengths)
     plt.title("Random Search: Episode Lengths")
     plt.ylabel('Episode Lengths')

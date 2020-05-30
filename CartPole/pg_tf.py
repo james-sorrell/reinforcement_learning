@@ -272,7 +272,7 @@ def main():
   if 'monitor' in sys.argv:
     record=True
 
-  save_folder = config.getSaveFolder('cartpole', os.path.basename(__file__).split('.')[0])
+  save_folder = config.getSaveFolder(os.path.basename(os.path.dirname(__file__)), os.path.basename(__file__).split('.')[0])
   if record is True:
     env = wrappers.Monitor(env, os.path.join(save_folder, 'monitor'))
 

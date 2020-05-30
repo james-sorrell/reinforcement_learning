@@ -128,15 +128,20 @@ def plot_cost_to_go(env, estimator, save_folder, num_tiles=20):
     plt.savefig(os.path.join(save_folder, 'cost_to_go.png'))
   plt.show()
 
-def main(show_plots=True):
+def main():
   env = gym.make('MountainCar-v0')
   ft = FeatureTransformer(env)
   model = Model(env, ft, "constant")
   gamma = 0.99
 
-  save_folder = config.getSaveFolder('mountaincart', os.path.basename(__file__).split('.')[0])
+  record = False
   if 'monitor' in sys.argv:
+    record=True
+
+  save_folder = config.getSaveFolder(os.path.basename(os.path.dirname(__file__)), os.path.basename(__file__).split('.')[0])
+  if record is True:
     env = wrappers.Monitor(env, os.path.join(save_folder, 'monitor'))
+
 
   N = 300
   totalrewards = np.empty(N)
@@ -153,17 +158,9 @@ def main(show_plots=True):
   print("avg reward for last 100 episodes:", totalrewards[-100:].mean())
   print("total steps:", -totalrewards.sum())
 
-  if show_plots:
-    plt.plot(totalrewards)
-    plt.title("Total Reward vs Iteration")
-    plt.ylabel("Reward")
-    plt.xlabel("Iteration")
-    if 'monitor' in sys.argv:
-        plt.savefig(os.path.join(save_folder, 'total_rewards.png'))
-    plt.show()
-    config.plot_running_avg(totalrewards, save_folder)
-    # plot the optimal state-value function
-    plot_cost_to_go(env, model, save_folder)
+  config.plot_total_reward(totalrewards, save_folder, record)
+  config.plot_running_avg(totalrewards, save_folder, record)
+  plot_cost_to_go(env, model, save_folder)
 
 
 if __name__ == '__main__':
