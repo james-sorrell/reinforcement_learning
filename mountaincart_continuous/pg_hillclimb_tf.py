@@ -51,7 +51,7 @@ class PolicyModel:
 
     # save inputs for copy
     self.ft = ft
-    self.D = D # dimensions of feature vector
+    self.D = D # dimensions of feature transformation
     self.hidden_layer_sizes_mean = hidden_layer_sizes_mean
     self.hidden_layer_sizes_var = hidden_layer_sizes_var
     
@@ -64,6 +64,7 @@ class PolicyModel:
       M1 = M2
 
     # final layer, 1 ensures we recieve scalar
+    # regression based mean estimation from input vector
     layer = HiddenLayer(M1, 1, lambda x: x, use_bias=False, zeros=True)
     self.mean_layers.append(layer)
 
@@ -75,8 +76,9 @@ class PolicyModel:
       self.var_layers.append(layer)
       M1 = M2
 
-    # final layer -> Variance needs to be greater than zero,
+    # final layer -> Variance needs to be greater than zero
     # hence we use softplus as the activation, 1 ensures we recieve scalar
+    # regression based variance estimation
     layer = HiddenLayer(M1, 1, tf.nn.softplus, use_bias=False, zeros=False)
     self.var_layers.append(layer)
 
@@ -130,7 +132,6 @@ class PolicyModel:
   def predict(self, X):
     X = np.atleast_2d(X)
     X = self.ft.transform(X)
-    
     return self.session.run(self.predict_op, feed_dict={self.X: X})
 
   def sample_action(self, X):
