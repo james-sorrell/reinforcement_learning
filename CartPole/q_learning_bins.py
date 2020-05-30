@@ -5,7 +5,6 @@ import config
 
 from gym import wrappers
 import numpy as np 
-import pandas as pd 
 import matplotlib.pyplot as plt
 
 def build_state(features):
