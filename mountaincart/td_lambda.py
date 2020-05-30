@@ -12,11 +12,10 @@ from mountaincart.q_learning_rbf import FeatureTransformer, plot_cost_to_go
 # Custom Base Model
 class BaseModel:
   def __init__(self, D):
-    # Xavier Initialisation of Weights
     self.w = np.random.randn(D) / np.sqrt(D)
 
-  def partial_fit(self, state, target, eligibility, lr=10e-3):
-    self.w += lr*(target - state.dot(self.w)*eligibility)
+  def partial_fit(self, input_, target, eligibility, lr=1e-2):
+    self.w += lr*(target - input_.dot(self.w))*eligibility
 
   def predict(self, X):
     X = np.array(X)
@@ -30,7 +29,6 @@ class Model:
     self.feature_transformer = feature_transformer
 
     D = feature_transformer.dimensions
-    # Eligibility trace has size equal to action_space * feature dimensions
     self.eligibilities = np.zeros((env.action_space.n, D))
     for i in range(env.action_space.n):
       model = BaseModel(D)
@@ -65,8 +63,7 @@ class Model:
       return np.argmax(self.predict(s))
 
 # lambda is reserved variable name
-def play_one(model, eps, gamma, lambda_):
-  env = gym.make('MountainCar-v0')
+def play_one(model, env, eps, gamma, lambda_):
   observation = env.reset()
   done = False
   totalreward = 0
@@ -79,7 +76,7 @@ def play_one(model, eps, gamma, lambda_):
     observation, reward, done, _ = env.step(action)
     next = model.predict(observation)
     assert(next.shape == (1, env.action_space.n))
-    G = reward + gamma*np.max(model.predict(observation)[0])
+    G = reward + gamma*np.max(next[0])
     model.update(prev_observation, action, G, gamma, lambda_)
     totalreward += reward
     iters +=1 
@@ -92,8 +89,8 @@ def main():
   ft = FeatureTransformer(env)
   # Use local td-lambda model
   model = Model(env, ft)
-  gamma = 0.99
-  lambda_ = 0.9
+  gamma = 0.9999
+  lambda_ = 0.7
 
   record = False
   save_folder = config.getSaveFolder('cartpole', os.path.basename(__file__).split('.')[0])
@@ -106,7 +103,7 @@ def main():
   costs = np.empty(N)
   for n in range(N):
     eps = 0.1*(0.97**n)
-    totalreward = play_one(model, eps, gamma, lambda_)
+    totalreward = play_one(model, env, eps, gamma, lambda_)
     totalrewards[n] = totalreward
     print("Episode: {}, Total Reward: {}".format(n, totalreward))
   print("Average reward for last 100 episodes:", totalrewards[-100:].mean())
