@@ -107,7 +107,7 @@ def play_one(model, env, eps, gamma):
   return totalreward
 
 
-def plot_cost_to_go(env, estimator, save_folder, num_tiles=20):
+def plot_cost_to_go(env, estimator, save_folder, record=True, num_tiles=20):
   x = np.linspace(env.observation_space.low[0], env.observation_space.high[0], num=num_tiles)
   y = np.linspace(env.observation_space.low[1], env.observation_space.high[1], num=num_tiles)
   X, Y = np.meshgrid(x, y)
@@ -124,7 +124,7 @@ def plot_cost_to_go(env, estimator, save_folder, num_tiles=20):
   ax.set_zlabel('-V(s)')
   ax.set_title("Cost-To-Go Function")
   fig.colorbar(surf)
-  if 'monitor' in sys.argv:
+  if record is True:
     plt.savefig(os.path.join(save_folder, 'cost_to_go.png'))
   plt.show()
 
