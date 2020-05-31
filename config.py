@@ -46,6 +46,6 @@ def plot_total_reward(total_rewards, save_folder, record=False):
 gym.envs.register(
     id='CartPoleLong-v0',
     entry_point='gym.envs.classic_control:CartPoleEnv',
-    max_episode_steps= 10000,
+    max_episode_steps= 1000,
     reward_threshold=195.0,
 )
