@@ -227,10 +227,6 @@ def main():
       print("Episode: {}, Total Reward: {:.2f}, Num Steps: {}".format(n, totalreward, num_steps))
   print("Average reward over 100 episodes with best models: {}".format(totalrewards[-100:].mean()))
 
-  plt.plot(totalrewards)
-  plt.title("Rewards")
-  plt.show()
-
   config.plot_total_reward(np.array(totalrewards), save_folder, record)
   config.plot_running_avg(np.array(totalrewards), save_folder, record)
   plot_cost_to_go(env, vmodel, save_folder, record)
