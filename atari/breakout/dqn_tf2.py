@@ -149,21 +149,30 @@ class ReplayMemory:
     return np.transpose(self.states, axes=(0, 2, 3, 1)), self.actions[self.indices], self.rewards[self.indices], np.transpose(self.new_states, axes=(0, 2, 3, 1)), self.terminal_flags[self.indices]
 
 class DQN:
-  def __init__(self, K, conv_layer_sizes, hidden_layer_sizes):
+  def __init__(self, K):
 
     self.K = K
-    self.X = keras.Input(dtype=tf.float32, shape=(IM_SIZE, IM_SIZE, 4), name='X')
-    self.z = tf.keras.layers.Conv2D(32, 8, strides=4, activation='relu')(self.X)
-    self.z = tf.keras.layers.Conv2D(64, 4, strides=2, activation='relu')(self.z)
-    self.z = tf.keras.layers.Conv2D(64, 3, strides=1, activation='relu')(self.z)
-    self.z = tf.keras.layers.Flatten()(self.z)
-    self.z = tf.keras.layers.Dense(512)(self.z)
-    self.z = tf.keras.layers.Dense(self.K)(self.z)
-    self.Y = self.z
+    def lecun_normal(seed=None):
+      return tf.keras.initializers.VarianceScaling(scale=1., mode='fan_in', distribution='truncated_normal', seed=seed)
+      
+    w_initializer = lecun_normal()
+    b_initializer = tf.zeros_initializer()
 
-    self.network = tf.keras.Model(inputs=[self.X], outputs=[self.Y])
-    self.weights = self.network.trainable_variables
-    self.optimizer = tf.keras.optimizers.Adam(1e-5)
+    self.network = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(filters=32, kernel_size=8, strides=4, 
+                            activation='relu', padding="same", 
+                            input_shape=(IM_SIZE, IM_SIZE, 4),
+                            kernel_initializer=w_initializer),
+      tf.keras.layers.Conv2D(filters=64, kernel_size=4, strides=2, activation='relu', padding="same", kernel_initializer=w_initializer),
+      tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, activation='relu', padding="same", kernel_initializer=w_initializer),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(512, activation='relu', kernel_initializer=w_initializer, bias_initializer=b_initializer),
+      tf.keras.layers.Dense(self.K, activation=None, kernel_initializer=w_initializer, bias_initializer=b_initializer)
+    ])
+
+    # self.network = tf.keras.Model(inputs=[self.X], outputs=[self.Y])
+    self.optimizer = tf.keras.optimizers.Adam(learning_rate=10e-3)
+    # self.network.compile(optimizer=self.optimizer)
 
   def copy_from(self, other):
     """ Copy weights from one network to another network, 
@@ -183,8 +192,8 @@ class DQN:
     with tf.GradientTape() as t:
       selected_action_values = tf.reduce_sum(self.predict(states)*keras.backend.one_hot(actions, K), axis=1)
       cost = tf.reduce_mean(tf.compat.v1.losses.huber_loss(targets, selected_action_values))
-    grads = t.gradient(cost, self.weights)
-    self.optimizer.apply_gradients(zip(grads, self.weights))
+    grads = t.gradient(cost, self.network.trainable_variables)
+    self.optimizer.apply_gradients(zip(grads, self.network.trainable_variables))
     return cost
 
   def sample_action(self, x, eps):
@@ -231,6 +240,7 @@ def play_one(
   obs = env.reset()
   obs_small = image_transformer.transform(obs)
   state = np.stack([obs_small] * 4, axis=2)
+  loss = None
 
   total_time_training = 0
   num_steps_in_episode = 0
@@ -288,8 +298,6 @@ def smooth(x):
 if __name__ == '__main__':
 
   # hyperparams and initialize stuff
-  conv_layer_sizes = [(32, 8, 4), (64, 4, 2), (64, 3, 1)]
-  hidden_layer_sizes = [512]
   gamma = 0.99
   batch_sz = 32
   num_episodes = 3500
@@ -307,16 +315,8 @@ if __name__ == '__main__':
   env = gym.envs.make("Breakout-v0")
 
   # Create models
-  model = DQN(
-    K=K,
-    conv_layer_sizes=conv_layer_sizes,
-    hidden_layer_sizes=hidden_layer_sizes
-    )
-  target_model = DQN(
-    K=K,
-    conv_layer_sizes=conv_layer_sizes,
-    hidden_layer_sizes=hidden_layer_sizes
-    )
+  model = DQN(K=K)
+  target_model = DQN(K=K)
   image_transformer = ImageTransformer()
 
   print("Populating experience replay buffer...")
