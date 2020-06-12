@@ -5,8 +5,9 @@ import sys
 import config
 
 import numpy as np
-import tensorflow.compat.v1 as tf
-tf.compat.v1.disable_eager_execution()
+import tensorflow as tf
+import tensorflow_probability as tfp
+from tensorflow import keras
 import matplotlib.pyplot as plt
 from gym import wrappers
 from datetime import datetime
@@ -15,13 +16,15 @@ from cartpole.q_learning_bins import plot_running_avg
 
 # so you can test different architectures
 class HiddenLayer:
-  def __init__(self, M1, M2, f=tf.nn.tanh, use_bias=True):
-    self.W = tf.Variable(tf.random_normal(shape=(M1, M2)))
+  def __init__(self, M1, M2, f=keras.activations.tanh, use_bias=True):
+    #print("\n\tM1: {}, M2: {}\n".format(M1, M2))
+    self.W = tf.Variable(tf.random.normal(shape=(M1, M2)))
     self.use_bias = use_bias
     if use_bias:
       self.b = tf.Variable(np.zeros(M2).astype(np.float32))
     self.f = f
 
+  @tf.function
   def forward(self, X):
     # forward mat mul
     a = tf.matmul(X, self.W)
@@ -36,6 +39,7 @@ class PolicyModel:
   def __init__(self, D, K, hidden_layer_sizes):
     # Create the graph -> K = num actions
     self.layers = []
+    self.K = K
     M1 = D
     for M2 in hidden_layer_sizes:
       layer = HiddenLayer(M1, M2)
@@ -43,76 +47,42 @@ class PolicyModel:
       M1 = M2
 
     # final layer
-    layer = HiddenLayer(M1, K, tf.nn.softmax, use_bias=False)
+    layer = HiddenLayer(M1, K, keras.activations.softmax, use_bias=False)
     self.layers.append(layer)
 
-    # inputs and targets
-    self.X = tf.placeholder(tf.float32, shape=(None, D), name='X')
-    self.actions = tf.placeholder(tf.int32, shape=(None,), name='actions')
-    self.advantages = tf.placeholder(tf.float32, shape=(None,), name='advantages')
-
-    # calculate output and cost
-    Z = self.X
+    # add layers to keras model
+    self.model = keras.Sequential()
     for layer in self.layers:
-      Z = layer.forward(Z)
+      self.model.add(keras.layers.Lambda(layer.forward))
+    # define optimizer
+    self.optimizer = tf.keras.optimizers.Adam(learning_rate=1e-1)
+
+  def partial_fit(self, X, actions, advantages):
+    X = np.atleast_2d(X)
+    actions = np.atleast_1d(actions)
+    advantages = np.atleast_1d(advantages)
+    with tf.GradientTape() as t:
+      # This is a way to index p_a_given_s
+      # using a one-hot matrix for the actions
+      # that we took. reduce sum is a convenient
+      # way for us to remove the zero'd out dimensions
+      # we then log this because the cost function
+      # for policy gradient method is logged.
+      selected_probs = tf.math.log(
+        tf.reduce_sum(self.predict(X) * keras.backend.one_hot(actions, self.K), axis=1)
+      )
+      # We negate this because we want to maximise this value
+      # however, tensorflows optimisers only minimise.
+      cost = -tf.reduce_sum(advantages * selected_probs)
+    grads = t.gradient(cost, self.model.trainable_variables)
+    self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+
+  def predict(self, X):
     # Proability distribution over our actions for
     # given state, as predicted by NN defined as a 
     # function that we can assign and execute externally
     # make them 1-D
-    
-    p_a_given_s = Z
-    # action_scores = Z
-    # p_a_given_s = tf.nn.softmax(action_scores)
-    # self.action_scores = action_scores
-    self.predict_op = p_a_given_s
-
-    # self.one_hot_actions = tf.one_hot(self.actions, K)
-
-    # This is a way to index p_a_given_s
-    # using a one-hot matrix for the actions
-    # that we took. reduce sum is a convenient
-    # way for us to remove the zero'd out dimensions
-    # we then log this because the cost function
-    # for policy gradient method is logged.
-    selected_probs = tf.log(
-      tf.reduce_sum(
-        p_a_given_s * tf.one_hot(self.actions, K),
-        reduction_indices=[1]
-      )
-    )
-
-    # We negate this because we want to maximise this value
-    # however, tensorflows optimisers only minimise.
-    cost = -tf.reduce_sum(self.advantages * selected_probs)
-    # Here we have multiple optimisers that we could choose with different
-    # learning parameters that we can choose.
-    self.train_op = tf.train.AdamOptimizer(1e-1).minimize(cost)
-    # self.train_op = tf.train.AdagradOptimizer(1e-1).minimize(cost)
-    # self.train_op = tf.train.MomentumOptimizer(1e-4, momentum=0.9).minimize(cost)
-    # self.train_op = tf.train.GradientDescentOptimizer(1e-4).minimize(cost)
-
-  def set_session(self, session):
-    self.session = session
-
-  def partial_fit(self, X, actions, advantages):
-    # States, actions & advantages set to correct
-    # array sizes
-    X = np.atleast_2d(X)
-    actions = np.atleast_1d(actions)
-    advantages = np.atleast_1d(advantages)
-    # Then we call the train operation
-    self.session.run(
-      self.train_op,
-      feed_dict={
-        self.X: X,
-        self.actions: actions,
-        self.advantages: advantages,
-      }
-    )
-
-  def predict(self, X):
-    X = np.atleast_2d(X)
-    return self.session.run(self.predict_op, feed_dict={self.X: X})
+    return self.model(np.atleast_2d(X)) # self.session.run(self.predict_op, feed_dict={self.X: X})
 
   # Note that we don't use epsilon greedy here! This is because policy
   # gradient is a probabalistic methodology which converges on an 
@@ -120,7 +90,9 @@ class PolicyModel:
   def sample_action(self, X):
     p = self.predict(X)[0]
     # Samples from p accoirding to provided proability distribution
-    return np.random.choice(len(p), p=p)
+    dist = tfp.distributions.Categorical(p)
+    #print(dist.sample())
+    return dist.sample().numpy()
 
 # Approximates V(s)
 class ValueModel:
@@ -137,37 +109,23 @@ class ValueModel:
     layer = HiddenLayer(M1, 1, lambda x: x)
     self.layers.append(layer)
 
-    # inputs and targets
-    self.X = tf.placeholder(tf.float32, shape=(None, D), name='X')
-    self.Y = tf.placeholder(tf.float32, shape=(None,), name='Y')
-
-    # calculate output and cost
-    Z = self.X
+    # create trainable keras model
+    self.model = keras.Sequential()
     for layer in self.layers:
-      Z = layer.forward(Z)
-    Y_hat = tf.reshape(Z, [-1]) # the output
-    # Predict operation
-    self.predict_op = Y_hat
+      self.model.add(keras.layers.Lambda(layer.forward))
 
-    cost = tf.reduce_sum(tf.square(self.Y - Y_hat))
-
-    # Training operator with different potential optimisers
-    # self.train_op = tf.train.AdamOptimizer(1e-2).minimize(cost)
-    # self.train_op = tf.train.MomentumOptimizer(1e-2, momentum=0.9).minimize(cost)
-    self.train_op = tf.train.GradientDescentOptimizer(1e-4).minimize(cost)
-
-  def set_session(self, session):
-    self.session = session
+    self.optimizer = tf.keras.optimizers.SGD(1e-4)
 
   def partial_fit(self, X, Y):
     X = np.atleast_2d(X)
     Y = np.atleast_1d(Y)
-    self.session.run(self.train_op, feed_dict={self.X: X, self.Y: Y})
+    with tf.GradientTape() as t:
+      cost = tf.reduce_sum(tf.square(Y - self.model(X)))
+    grads = t.gradient(cost, self.model.trainable_variables)
+    self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
   def predict(self, X):
-    X = np.atleast_2d(X)
-    return self.session.run(self.predict_op, feed_dict={self.X: X})
-
+    return self.model(np.atleast_2d(X))
 
 def play_one_td(env, pmodel, vmodel, gamma):
   observation = env.reset()
@@ -259,13 +217,6 @@ def main():
   K = env.action_space.n
   pmodel = PolicyModel(D, K, [])
   vmodel = ValueModel(D, [10])
-  # tf init
-  init = tf.global_variables_initializer()
-  session = tf.InteractiveSession()
-  session.run(init)
-  # pvmodels init
-  pmodel.set_session(session)
-  vmodel.set_session(session)
   gamma = 0.99
 
   record=False
