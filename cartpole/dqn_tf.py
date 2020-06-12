@@ -5,8 +5,8 @@ import sys
 import config
 
 import numpy as np
-import tensorflow.compat.v1 as tf
-tf.compat.v1.disable_eager_execution()
+import tensorflow as tf 
+from tensorflow import keras
 import matplotlib.pyplot as plt
 from gym import wrappers
 from datetime import datetime
@@ -14,7 +14,7 @@ from datetime import datetime
 # so you can test different architectures
 class HiddenLayer:
   def __init__(self, M1, M2, f=tf.nn.tanh, use_bias=True):
-    self.W = tf.Variable(tf.random_normal(shape=(M1, M2)))
+    self.W = tf.Variable(tf.random.normal(shape=(M1, M2)))
     self.params = [self.W]
     self.use_bias = use_bias
     if use_bias:
@@ -22,6 +22,7 @@ class HiddenLayer:
       self.params.append(self.b)
     self.f = f
 
+  @tf.function
   def forward(self, X):
     if self.use_bias:
       a = tf.matmul(X, self.W) + self.b
@@ -48,34 +49,12 @@ class DQN:
     layer = HiddenLayer(M1, K, lambda x: x)
     self.layers.append(layer)
 
-    # collect params for copy
-    self.params = []
+    # add layers to keras model
+    self.model = keras.Sequential()
     for layer in self.layers:
-      self.params += layer.params
-
-    # inputs and targets
-    self.X = tf.placeholder(tf.float32, shape=(None, D), name='X')
-    self.G = tf.placeholder(tf.float32, shape=(None,), name='G')
-    self.actions = tf.placeholder(tf.int32, shape=(None,), name='actions')
-
-    # calculate output and cost
-    Z = self.X
-    for layer in self.layers:
-      Z = layer.forward(Z)
-    Y_hat = Z
-    self.predict_op = Y_hat
-
-    selected_action_values = tf.reduce_sum(
-      Y_hat * tf.one_hot(self.actions, K),
-      reduction_indices=[1]
-    )
-
-    # cost is the observed value (Q(t) - the expected value at gamma*Q(t-1) + r)
-    cost = tf.reduce_sum(tf.square(self.G - selected_action_values))
-    self.train_op = tf.train.AdamOptimizer(1e-2).minimize(cost)
-    # self.train_op = tf.train.AdagradOptimizer(1e-2).minimize(cost)
-    # self.train_op = tf.train.MomentumOptimizer(1e-3, momentum=0.9).minimize(cost)
-    # self.train_op = tf.train.GradientDescentOptimizer(1e-4).minimize(cost)
+      self.model.add(keras.layers.Lambda(layer.forward))
+    # define optimizer
+    self.optimizer = tf.keras.optimizers.Adam(learning_rate=1e-2)
 
     # create replay memory
     self.experience = {'s': [], 'a': [], 'r': [], 's2': [], 'done': []}
@@ -88,20 +67,10 @@ class DQN:
     self.session = session
 
   def copy_from(self, other):
-    # collect all the ops
-    ops = []
-    my_params = self.params
-    other_params = other.params
-    for p, q in zip(my_params, other_params):
-      actual = self.session.run(q)
-      op = p.assign(actual)
-      ops.append(op)
-    # now run them all
-    self.session.run(ops)
+    self.model.set_weights(other.model.get_weights())
 
   def predict(self, X):
-    X = np.atleast_2d(X)
-    return self.session.run(self.predict_op, feed_dict={self.X: X})
+    return self.model(np.atleast_2d(X))
 
   def train(self, target_network):
     # sample a random batch from buffer, do an iteration of GD
@@ -119,15 +88,13 @@ class DQN:
     next_Q = np.max(target_network.predict(next_states), axis=1)
     targets = [r + self.gamma*next_q if not done else r for r, next_q, done in zip(rewards, next_Q, dones)]
 
-    # call optimizer
-    self.session.run(
-      self.train_op,
-      feed_dict={
-        self.X: states,
-        self.G: targets,
-        self.actions: actions
-      }
-    )
+    with tf.GradientTape() as t:
+      selected_action_values = tf.reduce_sum(
+        self.predict(states) * keras.backend.one_hot(actions, self.K), axis=1
+        )
+      cost = tf.reduce_sum(tf.math.square(targets - selected_action_values))
+    grads = t.gradient(cost, self.model.trainable_variables)
+    self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
   def add_experience(self, s, a, r, s2, done):
     if len(self.experience['s']) >= self.max_experiences:
@@ -187,11 +154,6 @@ def main():
   sizes = [200,200]
   model = DQN(D, K, sizes, gamma)
   tmodel = DQN(D, K, sizes, gamma)
-  init = tf.global_variables_initializer()
-  session = tf.InteractiveSession()
-  session.run(init)
-  model.set_session(session)
-  tmodel.set_session(session)
 
   record=False
   if 'monitor' in sys.argv:
