@@ -1,9 +1,8 @@
 import config
 import cartpole.q_learning_rbf_sgd as q_learning
 import numpy as np
-import tensorflow.compat.v1 as tf
-tf.compat.v1.disable_eager_execution()
-
+import tensorflow as tf
+from tensorflow import keras
 
 class SGDRegressor:
   def __init__(self, D, learning_rate=0.1):
@@ -11,31 +10,31 @@ class SGDRegressor:
 
     self.lr = learning_rate
     self.w = tf.Variable(tf.random.normal(shape=(D,1)), name='w')
-    self.X = tf.placeholder(tf.float32, shape=(None, D), name='X')
-    self.Y = tf.placeholder(tf.float32, shape=(None,), name='Y')
+    
     # Multiply and flatten
-    Y_hat = tf.reshape( tf.matmul(self.X, self.w), [-1] )
-    delta = self.Y - Y_hat
-    # Sums along the vector, reducing to scalar
-    # Same as dot product of delta
-    cost = tf.reduce_sum(delta*delta)
-    self.train_op = tf.train.GradientDescentOptimizer(self.lr).minimize(cost)
-    self.predict_op = Y_hat
+    @tf.function
+    def _forward(X):
+      return tf.reshape( tf.matmul(X, self.w), [-1] )
 
-    # Initialise tf instance
-    init = tf.global_variables_initializer()
-    self.session = tf.InteractiveSession()
-    self.session.run(init)
+    self.model = keras.Sequential()
+    self.model.add(keras.layers.Lambda(self._forward))
+    # define optimizer
+    self.optimizer = tf.keras.optimizers.SGD(learning_rate=self.lr)
 
   # Define training function as function definition
   # As above, updates is defined as a function that 
   # can be derived purely from X, Y and the weights
   # that are already stored on the SGD Regressor.
   def partial_fit(self, X, Y):
-    self.session.run(self.train_op, feed_dict={self.X: X, self.Y: Y})
+    with tf.GradientTape() as t:
+      delta = Y - self.predict(X)
+      cost = tf.reduce_sum(delta*delta)
+    grads = t.gradient(cost, self.model.trainable_variables)
+    self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+
   # As above, but just to Y_hat stage
   def predict(self, X):
-    return self.session.run(self.predict_op, feed_dict={self.X: X})
+    return self.model(X)
 
 if __name__ == '__main__':
   # Replace q_learning SGD Regressor with Theano SGD

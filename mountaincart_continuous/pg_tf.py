@@ -3,9 +3,9 @@ import os
 import sys
 import config
 import numpy as np 
-import tensorflow.compat.v1 as tf
-tf.compat.v1.disable_eager_execution()
-
+import tensorflow as tf
+import tensorflow_probability as tfp
+from tensorflow import keras
 import matplotlib.pyplot as plt
 from gym import wrappers
 from mountaincart.q_learning_rbf import FeatureTransformer, plot_cost_to_go
@@ -28,7 +28,7 @@ class HiddenLayer:
       self.W = tf.Variable(W)
     else:
         # Xavier Initialisation
-        W = tf.random_normal(shape=(M1, M2)) * np.sqrt(2. / M1, dtype=np.float32)
+        W = tf.random.normal(shape=(M1, M2)) * np.sqrt(2. / M1, dtype=np.float32)
     self.W = tf.Variable(W)
 
     self.use_bias = use_bias
@@ -37,13 +37,12 @@ class HiddenLayer:
 
     self.f = f
 
-
+  @tf.function
   def forward(self, X):
     a = tf.matmul(X, self.W)
     if self.use_bias:
       a += self.b
     return self.f(a)
-
 
 # approximates pi(a | s)
 class PolicyModel:
@@ -67,54 +66,49 @@ class PolicyModel:
     # regression based variance estimation
     self.stdv_layer = HiddenLayer(M1, 1, tf.nn.softplus, use_bias=False, zeros=False)
 
-    # inputs and targets
-    self.X = tf.placeholder(tf.float32, shape=(None, D), name='X')
-    self.actions = tf.placeholder(tf.float32, shape=(None,), name='actions')
-    self.advantages = tf.placeholder(tf.float32, shape=(None,), name='advantages')
-
-    # get final hidden layer
-    Z = self.X
+    self.X = keras.Input(shape=(D), dtype=tf.float32,)
+    # create trainable keras model
+    #self.model = keras.Sequential()
+    z = self.X
     for layer in self.hidden_layers:
-      Z = layer.forward(Z)
+     z = keras.layers.Lambda(layer.forward)(z)
+    # mean, std, make them 1-D
+    mean = keras.layers.Lambda(self.mean_layer.forward)(z)
+    std = keras.layers.Lambda(self.stdv_layer.forward)(z)
+    std = keras.layers.Lambda(lambda x: x + 1e-5)(std) # smoothing
+    mean = keras.layers.Flatten()(mean)
+    std = keras.layers.Flatten()(std) 
+    self.model = keras.Model(inputs=[self.X], outputs=[mean, std])
 
-    # calculate output and cost
-    mean = self.mean_layer.forward(Z)
-    std = self.stdv_layer.forward(Z) + 1e-5 # smoothing
-
-    # make them 1-D
-    mean = tf.reshape(mean, [-1])
-    std = tf.reshape(std, [-1]) 
-
-    # sampling from distribution + clipping
-    norm = tf.distributions.Normal(mean, std)
-    self.predict_op = tf.clip_by_value(norm.sample(), -1, 1)
-
-    log_probs = norm.log_prob(self.actions)
-    cost = -tf.reduce_sum(self.advantages * log_probs + 0.1*norm.entropy())
-    self.train_op = tf.train.AdamOptimizer(1e-4).minimize(cost)
+    self.optimizer = tf.keras.optimizers.Adam(1e-4)
 
   def set_session(self, session):
     self.session = session
 
   def partial_fit(self, X, actions, advantages):
-    X = np.atleast_2d(X)
-    X = self.ft.transform(X)
-    
+
     actions = np.atleast_1d(actions)
     advantages = np.atleast_1d(advantages)
-    self.session.run(
-      self.train_op,
-      feed_dict={
-        self.X: X,
-        self.actions: actions,
-        self.advantages: advantages,
-      }
-    )
+    with tf.GradientTape() as t:
+      norm = self.unclipped_predict(X)
+      log_probs = norm.log_prob(actions)
+      cost = -tf.reduce_sum(advantages * log_probs + 0.1*norm.entropy())
 
-  def predict(self, X):
+    grads = t.gradient(cost, self.model.trainable_variables)
+    self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+
+  def unclipped_predict(self, X):
+    """ This function exists because the train uses
+    the unclipped norm """
     X = np.atleast_2d(X)
     X = self.ft.transform(X)
-    return self.session.run(self.predict_op, feed_dict={self.X: X})
+    mean, std = self.model(X)
+    return tfp.distributions.Normal(mean, std)
+    
+
+  def predict(self, X):
+    norm = self.unclipped_predict(X)
+    return tf.clip_by_value(norm.sample(), -1, 1)
 
   def sample_action(self, X):
     p = self.predict(X)[0]
@@ -140,35 +134,36 @@ class ValueModel:
     self.layers.append(layer)
 
     # inputs and targets
-    self.X = tf.placeholder(tf.float32, shape=(None, D), name='X')
-    self.Y = tf.placeholder(tf.float32, shape=(None,), name='Y')
+    #self.X = tf.placeholder(tf.float32, shape=(None, D), name='X')
+    #self.Y = tf.placeholder(tf.float32, shape=(None,), name='Y')
 
-    # calculate output and cost
-    Z = self.X
+    # add layers to keras model
+    self.model = keras.Sequential()
     for layer in self.layers:
-      Z = layer.forward(Z)
-    Y_hat = tf.reshape(Z, [-1]) # the output
-    self.predict_op = Y_hat
+      self.model.add(keras.layers.Lambda(layer.forward))
+    self.model.add(keras.layers.Flatten())
+    # define optimizer
+    self.optimizer = tf.keras.optimizers.Adam(learning_rate=1e-1)
 
-    cost = tf.reduce_sum(tf.square(self.Y - Y_hat))
-    self.cost = cost
-    self.train_op = tf.train.AdamOptimizer(1e-1).minimize(cost)
+    #cost = tf.reduce_sum(tf.square(self.Y - Y_hat))
+    #self.cost = cost
+    #self.train_op = tf.train.AdamOptimizer(1e-1).minimize(cost)
 
   def set_session(self, session):
     self.session = session
 
   def partial_fit(self, X, Y):
-    X = np.atleast_2d(X)
-    X = self.ft.transform(X)
     Y = np.atleast_1d(Y)
-    self.session.run(self.train_op, feed_dict={self.X: X, self.Y: Y})
-    cost = self.session.run(self.cost, feed_dict={self.X: X, self.Y: Y})
+    with tf.GradientTape() as t:
+      cost = tf.reduce_sum(tf.square(Y - self.predict(X)))
+    grads = t.gradient(cost, self.model.trainable_variables)
+    self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
     self.costs.append(cost)
 
   def predict(self, X):
     X = np.atleast_2d(X)
     X = self.ft.transform(X)
-    return self.session.run(self.predict_op, feed_dict={self.X: X})
+    return self.model(X)
 
 
 def play_one_td(env, pmodel, vmodel, gamma):
@@ -187,6 +182,8 @@ def play_one_td(env, pmodel, vmodel, gamma):
     totalreward += reward
 
     # update the models
+    # reshape observation because openai changes its shape
+    observation = observation.reshape([-1])    
     V_next = vmodel.predict(observation)
     G = reward + gamma*V_next
     advantage = G - vmodel.predict(prev_observation)
@@ -203,11 +200,6 @@ def main():
   D = ft.dimensions
   pmodel = PolicyModel(D, ft, [])
   vmodel = ValueModel(D, ft, [])
-  init = tf.global_variables_initializer()
-  session = tf.InteractiveSession()
-  session.run(init)
-  pmodel.set_session(session)
-  vmodel.set_session(session)
   gamma = 0.95
 
   record = False
