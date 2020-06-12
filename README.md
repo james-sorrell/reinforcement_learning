@@ -14,5 +14,6 @@ to have a go optimising hyper-parameters and making modifications!
 Developed in Python 3.7.6, using Tensorflow 2.2.0,
 it has not been tested in environments outside of this.
 
-TF2 A2C Implementation
-![A2C Breakout Demo](demo/a2c_demo.gif)
+> A2C Demo
+
+![A2C Breakout Demo](demo/a2c_demo.gif | width=100)
