@@ -23,66 +23,21 @@ class Agent:
             except RuntimeError as e:
                 print(e)
 
-        # config = tf.ConfigProto(intra_op_parallelism_threads=nenvs,
-        #                         inter_op_parallelism_threads=nenvs)
-        #config.gpu_options.allow_growth = True
-        #sess = tf.Session(config=config)
-
-        # nbatch = nenvs * nsteps
-        # # Action
-        # A = keras.Input(shape=[nbatch], dtype=tf.int32)
-        # # Advantage
-        # ADV = keras.Input(shape=[nbatch], dtype=tf.float32)
-        # # Return
-        # R = keras.Input(shape=[nbatch], dtype=tf.float32)
-        # # Learning Rate Constant
-        # LR = lr
-
         #self.step_model = Network(ob_space, ac_space, nenvs, 1, nstack, lr, alpha, epsilon, ent_coef, vf_coef, max_grad_norm)
         self.model = Network(ob_space, ac_space, nenvs, nsteps, nstack, lr, alpha, epsilon, ent_coef, vf_coef, max_grad_norm)
-
         self.step = self.model.step
         self.value = self.model.value
-
-        # neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.pi, labels=A)
-        # pg_loss = tf.reduce_mean(ADV * neglogpac)
-        # vf_loss = tf.reduce_mean(tf.math.squared_difference(tf.squeeze(train_model.vf), R) / 2.0)
-        # entropy = tf.reduce_mean(cat_entropy(train_model.pi))
-        # loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef
-
-        # params = find_trainable_variables("model")
-        # grads = tf.gradients(loss, params)
-        # if max_grad_norm is not None:
-        #     grads, grad_norm = tf.clip_by_global_norm(grads, max_grad_norm)
-        # grads_and_params = list(zip(grads, params))
-        # trainer = tf.train.RMSPropOptimizer(learning_rate=LR, decay=alpha, epsilon=epsilon)
-        # _train = trainer.apply_gradients(grads_and_params)
 
     def train(self, states, rewards, actions, values):
         advantages = rewards - values
         policy_loss, value_loss, policy_entropy = self.model.train(states, actions, advantages, rewards)
-        # feed_dict = {train_model.X: states, A: actions, ADV: advs, R: rewards, LR: lr}
-        # policy_loss, value_loss, policy_entropy, _ = sess.run(
-        #     [pg_loss, vf_loss, entropy, _train],
-        #     feed_dict
-        # )
         return policy_loss, value_loss, policy_entropy
 
     def save(self, save_path):
         self.model.network.save(save_path)
-        #ps = sess.run(params)
-        #joblib.dump(ps, save_path)
 
     def load(self, load_path):
         self.model.network = keras.models.load_model(load_path)
-        #loaded_params = joblib.load(load_path)
-        #restores = []
-        # for p, loaded_p in zip(params, loaded_params):
-        #     restores.append(p.assign(loaded_p))
-        # ps = sess.run(restores)
-
-        #self.train_model = train_model
-        #self.step_model = step_model
 
 
 class Runner:
