@@ -16,4 +16,4 @@ it has not been tested in environments outside of this.
 
 > A2C Demo
 
-![A2C Breakout Demo](demo/a2c_demo.gif)
+![A2C Breakout Demo](demo/640x320.gif)
