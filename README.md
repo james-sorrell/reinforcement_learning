@@ -1,5 +1,7 @@
 # Reinforcement Learning
 
+![A2C Breakout Demo](demo/640x320.gif)
+
 > Introduction
 
 In this repository I have re-written a large number of examples from
@@ -13,7 +15,3 @@ to have a go optimising hyper-parameters and making modifications!
 
 Developed in Python 3.7.6, using Tensorflow 2.2.0,
 it has not been tested in environments outside of this.
-
-> A2C Demo
-
-![A2C Breakout Demo](demo/640x320.gif)
