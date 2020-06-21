@@ -1,5 +1,6 @@
 import os
 import torch as T
+import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
@@ -29,7 +30,7 @@ class DeepQNetwork(nn.Module):
         state = T.zeros(1, *input_dimensions)
         dims = self.conv1(state)
         dims = self.conv2(dims)
-        dims = self.conv3(sims)
+        dims = self.conv3(dims)
         return int(np.prod(dims.size()))
 
     def forward(self, state):
