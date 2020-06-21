@@ -40,7 +40,7 @@ class DQNAgent():
 
     def choose_action(self, observation):
         """ Epsilon greedy action selection """
-        if np.random.random() > self.epsilson:
+        if np.random.random() > self.epsilon:
             state = T.tensor([observation], dtype=T.float).to(self.q_eval.device)
             actions = self.q_eval.forward(state)
             action = T.argmax(actions).item()
@@ -75,15 +75,15 @@ class DQNAgent():
     
     def save_models(self):
         self.q_eval.save_checkpoint()
-        self.q_eval.save_checkpoint()
+        self.q_targ.save_checkpoint()
 
     def load_models(self):
         self.q_eval.load_checkpoint()
-        self.q_next.load_checkpoint()
+        self.q_targ.load_checkpoint()
 
     def learn(self):
         """ Check if the memory counter is less than the batch size, if it is we don't train """
-        if self.memory.mem_counter < self.batch_size:
+        if self.memory.mem_cntr < self.batch_size:
             return
 
         self.q_eval.optimizer.zero_grad()
@@ -93,7 +93,7 @@ class DQNAgent():
 
         incidicies = np.arange(self.batch_size)
         # dims - > batch_size x num_actions
-        q_pred = self.q_eval.forward(incidicies, states)
+        q_pred = self.q_eval.forward(states)[incidicies, actions]
         # dim 1 is the action dimension
         # [0] gives changes named tuples into actions
         q_next = self.q_targ.forward(states_).max(dim=1)[0]

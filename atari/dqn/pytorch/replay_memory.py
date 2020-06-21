@@ -13,7 +13,7 @@ class ReplayBuffer():
         self.reward_memory = np.zeros(self.mem_size, dtype=np.float32)
         # this is being done as a way to deal with the terminal reward function being
         # different from the non-terminal reward function.
-        self.terminal_memory = np.zeros(self.mem_size, dtype=np.uint8)
+        self.terminal_memory = np.zeros(self.mem_size, dtype=np.bool)
     
     def store_transition(self, state, action, reward, state_, done):
         """ Cicular buffer index iteration and storage of memories """

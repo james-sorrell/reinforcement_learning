@@ -10,9 +10,9 @@ class DeepQNetwork(nn.Module):
         super(DeepQNetwork, self).__init__()
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_file = os.path.join(self.checkpoint_dir, name)
-        self.createModel(input_dims, num_actions)
+        self.createModel(input_dims, num_actions, lr)
 
-    def createModel(self, input_dimensions, num_outputs):
+    def createModel(self, input_dimensions, num_outputs, lr):
         # input channels, output filters, kernel size, stride
         self.conv1 = nn.Conv2d(input_dimensions[0], 32, 8, stride=4)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
@@ -20,7 +20,6 @@ class DeepQNetwork(nn.Module):
         fc_input_dims = self.calculate_conv_output_dims(input_dimensions)
         self.fc1 = nn.Linear(fc_input_dims, 512)
         self.fc2 = nn.Linear(512, num_outputs)
-
         self.optimizer = optim.RMSprop(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
         self.device = T.device('cude:0' if T.cuda.is_available() else 'cpu')

@@ -36,6 +36,7 @@ def plot_learning_curve(x, scores, epsilons, filename, lines=None):
 
 class RepeatActionAndMaxFrame(gym.Wrapper):
     def __init__(self, env=None, repeat=4, clip_reward=False, no_ops=0, fire_first=False):
+        super(RepeatActionAndMaxFrame, self).__init__(env)
         self.repeat = repeat
         self.shape = env.observation_space.low.shape
         self.frame_buffer = np.zeros_like((2, self.shape))
@@ -61,8 +62,8 @@ class RepeatActionAndMaxFrame(gym.Wrapper):
 
     def reset(self):
         obs = self.env.reset()
-        no_ops = np.random.randint(self.no_ops)+1 if no_ops > 0 else 0
-        for _ in range(no_ops):
+        self.no_ops = np.random.randint(self.no_ops)+1 if self.no_ops > 0 else 0
+        for _ in range(self.no_ops):
             _, _, done, _ = self.env.step(0)
             if done:
                 self.env.reset()
@@ -76,6 +77,7 @@ class RepeatActionAndMaxFrame(gym.Wrapper):
 class PreprocessFrame(gym.ObservationWrapper):
     def __init__(self, shape, env=None):
         super(PreprocessFrame, self).__init__(env)
+        # Channels first for pytorch
         self.shape = (shape[2], shape[0], shape[1])
         self.observation_space = gym.spaces.Box(low=0.0, high=1.0,
                                     shape=self.shape, dtype=np.float32)
@@ -112,6 +114,8 @@ class StackFrames(gym.ObservationWrapper):
 def make_env(env_name, shape=(84,84,1), repeat=4, clip_reward=False,
             no_ops=0, fire_first=False):
     env = gym.make(env_name)
+    print("\nmake env function")
+    print(type(env))
     env = RepeatActionAndMaxFrame(env, repeat, clip_reward, no_ops, fire_first)
     env = PreprocessFrame(shape, env)
     env = StackFrames(env, repeat)
