@@ -8,6 +8,7 @@ if __name__ == '__main__':
     best_score = -np.inf
     load_checkpoint = False
     n_games = 500
+
     agent = DDQNAgent(gamma=0.99, epsilon=1.0, lr=0.0001,
                     num_actions=env.action_space.n,
                     input_dims=(env.observation_space.shape),
@@ -44,7 +45,7 @@ if __name__ == '__main__':
         steps_array.append(n_steps)
     
         avg_score = np.mean(scores[-100:])
-        print("Epsidode: {}, Score: {}, Average Score: {:1f}, Best Score: {:1f}, Epsilon: {:1f}, Steps: {}".format(i, score, avg_score, best_score, agent.epsilon, n_steps))
+        print("Episode: {}, Score: {}, Average Score: {:1f}, Best Score: {:1f}, Epsilon: {:1f}, Steps: {}".format(i, score, avg_score, best_score, agent.epsilon, n_steps))
 
         if avg_score > best_score:
             if not load_checkpoint:

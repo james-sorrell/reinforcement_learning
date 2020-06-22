@@ -22,7 +22,7 @@ class DeepQNetwork(nn.Module):
         self.fc2 = nn.Linear(512, num_outputs)
         self.optimizer = optim.RMSprop(self.parameters(), lr=lr)
         self.loss = nn.MSELoss()
-        self.device = T.device('cude:0' if T.cuda.is_available() else 'cpu')
+        self.device = T.device('cuda:0' if T.cuda.is_available() else 'cpu')
         self.to(self.device)
 
     def calculate_conv_output_dims(self, input_dimensions):
@@ -46,8 +46,8 @@ class DeepQNetwork(nn.Module):
 
     def save_checkpoint(self):
         T.save(self.state_dict(), self.checkpoint_file)
-        print("\tcheckpoint saved")
+        print("\t--> Checkpoint saved")
 
     def load_checkpoint(self):
         self.load_state_dict(T.load(self.checkpoint_file))
-        print("\tcheckpoint loaded")
+        print("\t--> Checkpoint loaded")

@@ -19,7 +19,7 @@ class ReplayBuffer():
         """ Cicular buffer index iteration and storage of memories """
         index = self.mem_cntr % self.mem_size
         self.state_memory[index] = state
-        self.action_memory[action] = action
+        self.action_memory[index] = action
         self.reward_memory[index] = reward
         self.new_state_memory[index] = state_
         self.terminal_memory[index] = done

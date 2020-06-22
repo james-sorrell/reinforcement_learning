@@ -6,7 +6,7 @@ from replay_memory import ReplayBuffer
 class DQNAgent():
     def __init__(self, gamma, epsilon, lr, num_actions, input_dims, mem_size, 
         batch_size, eps_min=0.01, eps_start=5e-7, replace=1000, algo=None, 
-        env_name=None, checkpoint_dir='data'):
+        env_name=None, checkpoint_dir='tmp/dqn'):
         """ DQN Agent Parameter, Replay Buffer and Env Declaration """
                 
         self.gamma = gamma
