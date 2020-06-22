@@ -71,7 +71,7 @@ class DuelingDQNAgent():
         if self.epsilon > self.epsilon_min:
             self.epsilon = self.epsilon - self.epsilon_max 
         else:
-            self.epsilon = self.epsilon.min
+            self.epsilon = epsilon_min
     
     def save_models(self):
         self.q_eval.save_checkpoint()
@@ -104,6 +104,7 @@ class DuelingDQNAgent():
         q_target = rewards + self.gamma*q_next
 
         loss = self.q_eval.loss(q_target, q_pred).to(self.q_eval.device)
+        loss.backward()
         self.q_eval.optimizer.step()
         self.learn_step_counter += 1
         self.decrement_epsilon()

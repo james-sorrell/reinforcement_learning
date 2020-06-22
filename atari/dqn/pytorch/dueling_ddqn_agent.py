@@ -71,7 +71,7 @@ class DuelingDDQNAgent():
         if self.epsilon > self.epsilon_min:
             self.epsilon = self.epsilon - self.epsilon_max 
         else:
-            self.epsilon = self.epsilon.min
+            self.epsilon = self.epsilon_min
     
     def save_models(self):
         self.q_eval.save_checkpoint()
