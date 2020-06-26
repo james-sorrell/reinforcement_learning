@@ -4,12 +4,15 @@
 
 > Introduction
 
-In this repository I have re-written a large number of examples from
-Lazy Programmers repository, specifically RL2 and RL3 into Tensorflow 2.
+I've written a large amount of Q-Learning based examples in PyTorch
+in the atari/pytorch repository.
+
+I have re-written a large number of examples from Lazy Programmers repository, 
+specifically RL2 and RL3 into Tensorflow 2. 
 https://github.com/lazyprogrammer/machine_learning_examples
 
-These re-implementations are not perfect and I would encourage anybody
-to have a go optimising hyper-parameters and making modifications! 
+The code in this repository is not perfect, it's for learning purposes
+and the goal is not to create production level code.
 
 > Tools
 
