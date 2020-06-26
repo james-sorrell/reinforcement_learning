@@ -1,2 +1,4 @@
 *.pyc
 Data/*
+*.mp4
+*.meta.json
