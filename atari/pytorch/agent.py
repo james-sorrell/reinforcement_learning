@@ -5,7 +5,7 @@ from replay_memory import ReplayBuffer
 class Agent():
     def __init__(self, gamma, epsilon, lr, num_actions, input_dims, mem_size, 
         batch_size, eps_min=0.01, eps_dec=5e-7, replace=1000, algo=None, 
-        env_name=None, checkpoint_dir='tmp/dqn'):
+        env_name=None, checkpoint_dir="tmp"):
         """ Base agent class for our models """
                 
         self.gamma = gamma
@@ -23,7 +23,6 @@ class Agent():
         self.action_space = [i for i in range(self.num_actions)]
         self.learn_step_counter = 0
         self.memory = ReplayBuffer(mem_size, self.input_dimensions, self.num_actions)
-
 
     def choose_action(self, observation):
         raise NotImplementedError
@@ -223,7 +222,7 @@ class DuelingDQNAgent(Agent):
 class DuelingDDQNAgent(Agent):
     """ Double Deep Q Network Implementation deriving from Agent Baseclass """
     def __init__(self, *args, **kwargs):
-        super(DuelingDQNAgent, self).__init__(*args, **kwargs)
+        super(DuelingDDQNAgent, self).__init__(*args, **kwargs)
         from dueling_dqn_pytorch import DuelingDeepQNetwork
         self.q_eval = DuelingDeepQNetwork(name=self.env_name+'_'+self.algo+'_q_eval',
                             input_dims=self.input_dimensions,

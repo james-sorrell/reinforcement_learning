@@ -1,6 +1,7 @@
 import os
 import argparse
 import gym
+from gym import wrappers
 import agent as Agents
 import numpy as np
 from utils import plot_learning_curve, make_env
@@ -8,13 +9,13 @@ from utils import plot_learning_curve, make_env
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Deep Q Learning")
     # OPTIONAL ARGS
-    parser.add_argument('-n_games', type=int, default=300, help="Number of games to play")
-    parser.add_argument('-lr', type=float, default=1e-3, help="Learning rate for optimizer")
+    parser.add_argument('-n_games', type=int, default=500, help="Number of games to play")
+    parser.add_argument('-lr', type=float, default=1e-4, help="Learning rate for optimizer")
     parser.add_argument('-eps_min', type=float, default=0.1, help="Minimum value for epsilon-greedy action selection")
     parser.add_argument('-gamma', type=float, default=0.99, help="Discount factor for update equation")
     parser.add_argument('-eps_dec', type=float, default=1e-5, help="Epsilon decrement amount")
     parser.add_argument('-eps', type=float, default=1.0, help="Starting value for epsilon in epsilon-greedy")
-    parser.add_argument('-max_mem', type=int, default=20000, help="Maximum size for memory replay buffer")
+    parser.add_argument('-max_mem', type=int, default=75000, help="Maximum size for memory replay buffer")
     parser.add_argument('-repeat', type=int, default=4, help="Number of frames to repeat & stack")
     parser.add_argument('-bs', type=int, default=32, help="Batch size for memory replay sampling")
     parser.add_argument('-replace', type=int, default=1000, help="Interval for replacing target network")
@@ -29,6 +30,7 @@ if __name__ == '__main__':
     parser.add_argument('-clip_reward', type=bool, default=False, help="Clip rewards to range -1:1")
     parser.add_argument('-no_ops', type=int, default=0, help="Max number of no ops for testing")
     parser.add_argument('-fire_first', type=bool, default=False, help="Set first action of episode to fire")
+    parser.add_argument('-monitor', type=bool, default=False, help="Record .MP4 to models/<algo>/video directory")
     args = parser.parse_args()
 
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -42,6 +44,7 @@ if __name__ == '__main__':
     agent_ = getattr(Agents, args.algo)
     print("Agent: {}".format(agent_))
     print("Environment: {}".format(args.env))
+    checkpoint_dir = os.path.join("models", "{}".format(args.algo))
     agent = agent_(gamma=args.gamma,
                     epsilon=args.eps,
                     lr=args.lr,
@@ -53,7 +56,12 @@ if __name__ == '__main__':
                     eps_dec=args.eps_dec,
                     replace=args.replace,
                     algo=args.algo,
-                    env_name=args.env)
+                    env_name=args.env,
+                    checkpoint_dir=checkpoint_dir)
+
+    if args.monitor:
+        env = wrappers.Monitor(env, os.path.join(checkpoint_dir, "video"), 
+            video_callable=lambda episode_id: True, force=True)
 
     if args.load_checkpoint:
         agent.load_models()
@@ -81,7 +89,7 @@ if __name__ == '__main__':
         steps_array.append(n_steps)
     
         avg_score = np.mean(scores[-100:])
-        print("Episode: {}, Score: {}, Average Score: {:1f}, Best Score: {:1f}, Epsilon: {:1f}, Steps: {}".format(i, score, avg_score, best_score, agent.epsilon, n_steps))
+        print("Episode: {}, Score: {}, Average Score: {:.1f}, Best Score: {:.1f}, Epsilon: {:.1f}, Steps: {}".format(i, score, avg_score, best_score, agent.epsilon, n_steps))
 
         if avg_score > best_score:
             if not args.load_checkpoint:

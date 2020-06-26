@@ -57,14 +57,13 @@ class RepeatActionAndMaxFrame(gym.Wrapper):
             self.frame_buffer[idx] = obs
             if done:
                 break
-
         max_frame = np.maximum(self.frame_buffer[0], self.frame_buffer[1])
         return max_frame, t_reward, done, info
 
     def reset(self):
         obs = self.env.reset()
-        self.no_ops = np.random.randint(self.no_ops)+1 if self.no_ops > 0 else 0
-        for _ in range(self.no_ops):
+        no_ops = np.random.randint(self.no_ops)+1 if self.no_ops > 0 else 0
+        for _ in range(no_ops):
             _, _, done, _ = self.env.step(0)
             if done:
                 self.env.reset()
