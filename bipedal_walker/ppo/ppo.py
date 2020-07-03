@@ -1,207 +1,155 @@
-import torch
-import torch.nn as nn
-from torch.distributions import Categorical
+import math
+import random
+
 import gym
+import numpy as np
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+import torch
+import torch.optim as optim
+import torch.nn.functional as F
 
-class Memory:
-    def __init__(self):
-        self.actions = []
-        self.states = []
-        self.logprobs = []
-        self.rewards = []
-        self.is_terminals = []
-    
-    def clear_memory(self):
-        del self.actions[:]
-        del self.states[:]
-        del self.logprobs[:]
-        del self.rewards[:]
-        del self.is_terminals[:]
+use_cuda = torch.cuda.is_available()
+device   = torch.device("cuda" if use_cuda else "cpu")
+print("Device: {}".format(device))
 
-class ActorCritic(nn.Module):
-    def __init__(self, state_dim, action_dim, n_latent_var):
-        super(ActorCritic, self).__init__()
+from multiprocessing_env import SubprocVecEnv
+from model import ActorCritic
+from util import plot
 
-        # actor
-        self.action_layer = nn.Sequential(
-                nn.Linear(state_dim, n_latent_var),
-                nn.Tanh(),
-                nn.Linear(n_latent_var, n_latent_var),
-                nn.Tanh(),
-                nn.Linear(n_latent_var, action_dim),
-                nn.Softmax(dim=-1)
-                )
+
+num_envs = 16
+env_name = "Pendulum-v0"
+
+def make_env():
+    def _thunk():
+        env = gym.make(env_name)
+        return env
+
+    return _thunk
+
+envs = [make_env() for i in range(num_envs)]
+envs = SubprocVecEnv(envs)
+
+env = gym.make(env_name)
+
+def compute_gae(next_value, rewards, masks, values, gamma=0.99, tau=0.95):
+    values = values + [next_value]
+    gae = 0
+    returns = []
+    for step in reversed(range(len(rewards))):
+        delta = rewards[step] + gamma * values[step + 1] * masks[step] - values[step]
+        gae = delta + gamma * tau * masks[step] * gae
+        returns.insert(0, gae + values[step])
+    return returns
+
+def ppo_iter(mini_batch_size, states, actions, log_probs, returns, advantage):
+    batch_size = states.size(0)
+    for _ in range(batch_size // mini_batch_size):
+        rand_ids = np.random.randint(0, batch_size, mini_batch_size)
+        yield states[rand_ids, :], actions[rand_ids, :], log_probs[rand_ids, :], returns[rand_ids, :], advantage[rand_ids, :]
         
-        # critic
-        self.value_layer = nn.Sequential(
-                nn.Linear(state_dim, n_latent_var),
-                nn.Tanh(),
-                nn.Linear(n_latent_var, n_latent_var),
-                nn.Tanh(),
-                nn.Linear(n_latent_var, 1)
-                )
-        
-    def forward(self):
-        raise NotImplementedError
-        
-    def act(self, state, memory):
-        state = torch.from_numpy(state).float().to(device) 
-        action_probs = self.action_layer(state)
-        dist = Categorical(action_probs)
+def ppo_update(ppo_epochs, mini_batch_size, states, actions, log_probs, returns, advantages, clip_param=0.2):
+    for _ in range(ppo_epochs):
+        for state, action, old_log_probs, return_, advantage in ppo_iter(mini_batch_size, states, actions, log_probs, returns, advantages):
+            dist, value = model(state)
+            entropy = dist.entropy().mean()
+            new_log_probs = dist.log_prob(action)
+
+            ratio = (new_log_probs - old_log_probs).exp()
+            surr1 = ratio * advantage
+            surr2 = torch.clamp(ratio, 1.0 - clip_param, 1.0 + clip_param) * advantage
+
+            actor_loss  = - torch.min(surr1, surr2).mean()
+            critic_loss = (return_ - value).pow(2).mean()
+
+            loss = 0.5 * critic_loss + actor_loss - 0.001 * entropy
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+num_inputs  = envs.observation_space.shape[0]
+num_outputs = envs.action_space.shape[0]
+
+#Hyper params:
+hidden_size      = 256
+lr               = 3e-4
+num_steps        = 20
+mini_batch_size  = 5
+ppo_epochs       = 4
+threshold_reward = -200
+
+model = ActorCritic(num_inputs, num_outputs, hidden_size).to(device)
+optimizer = optim.Adam(model.parameters(), lr=lr)
+
+max_frames = 15000
+frame_idx  = 0
+test_rewards = []
+
+state = envs.reset()
+early_stop = False
+
+def test_env(vis=False):
+    state = env.reset()
+    if vis: env.render()
+    done = False
+    total_reward = 0
+    while not done:
+        state = torch.FloatTensor(state).unsqueeze(0).to(device)
+        dist, _ = model(state)
+        next_state, reward, done, _ = env.step(dist.sample().cpu().numpy()[0])
+        state = next_state
+        if vis: env.render()
+        total_reward += reward
+    return total_reward
+
+while frame_idx < max_frames and not early_stop:
+
+    log_probs = []
+    values    = []
+    states    = []
+    actions   = []
+    rewards   = []
+    masks     = []
+    entropy = 0
+
+    for _ in range(num_steps):
+
+        state = torch.FloatTensor(state).to(device)
+        dist, value = model(state)
+
         action = dist.sample()
+        next_state, reward, done, _ = envs.step(action.cpu().numpy())
+
+        log_prob = dist.log_prob(action)
+        entropy += dist.entropy().mean()
         
-        memory.states.append(state)
-        memory.actions.append(action)
-        memory.logprobs.append(dist.log_prob(action))
+        log_probs.append(log_prob)
+        values.append(value)
+        rewards.append(torch.FloatTensor(reward).unsqueeze(1).to(device))
+        masks.append(torch.FloatTensor(1 - done).unsqueeze(1).to(device))
         
-        return action.item()
+        states.append(state)
+        actions.append(action)
+        
+        state = next_state
+        frame_idx += 1
+        
+        if frame_idx % 1000 == 0:
+            test_reward = np.mean([test_env() for _ in range(10)])
+            test_rewards.append(test_reward)
+            plot(frame_idx, test_rewards)
+            if test_reward > threshold_reward: early_stop = True
+            
+    next_state = torch.FloatTensor(next_state).to(device)
+    _, next_value = model(next_state)
+    returns = compute_gae(next_value, rewards, masks, values)
+
+    returns   = torch.cat(returns).detach()
+    log_probs = torch.cat(log_probs).detach()
+    values    = torch.cat(values).detach()
+    states    = torch.cat(states)
+    actions   = torch.cat(actions)
+    advantage = returns - values
     
-    def evaluate(self, state, action):
-        action_probs = self.action_layer(state)
-        dist = Categorical(action_probs)
-        
-        action_logprobs = dist.log_prob(action)
-        dist_entropy = dist.entropy()
-        
-        state_value = self.value_layer(state)
-        
-        return action_logprobs, torch.squeeze(state_value), dist_entropy
-        
-class PPO:
-    def __init__(self, state_dim, action_dim, n_latent_var, lr, betas, gamma, K_epochs, eps_clip):
-        self.lr = lr
-        self.betas = betas
-        self.gamma = gamma
-        self.eps_clip = eps_clip
-        self.K_epochs = K_epochs
-        
-        self.policy = ActorCritic(state_dim, action_dim, n_latent_var).to(device)
-        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
-        self.policy_old = ActorCritic(state_dim, action_dim, n_latent_var).to(device)
-        self.policy_old.load_state_dict(self.policy.state_dict())
-        
-        self.MseLoss = nn.MSELoss()
-    
-    def update(self, memory):   
-        # Monte Carlo estimate of state rewards:
-        rewards = []
-        discounted_reward = 0
-        for reward, is_terminal in zip(reversed(memory.rewards), reversed(memory.is_terminals)):
-            if is_terminal:
-                discounted_reward = 0
-            discounted_reward = reward + (self.gamma * discounted_reward)
-            rewards.insert(0, discounted_reward)
-        
-        # Normalizing the rewards:
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
-        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-5)
-        
-        # convert list to tensor
-        old_states = torch.stack(memory.states).to(device).detach()
-        old_actions = torch.stack(memory.actions).to(device).detach()
-        old_logprobs = torch.stack(memory.logprobs).to(device).detach()
-        
-        # Optimize policy for K epochs:
-        for _ in range(self.K_epochs):
-            # Evaluating old actions and values :
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
-            
-            # Finding the ratio (pi_theta / pi_theta__old):
-            ratios = torch.exp(logprobs - old_logprobs.detach())
-                
-            # Finding Surrogate Loss:
-            advantages = rewards - state_values.detach()
-            surr1 = ratios * advantages
-            surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * advantages
-            loss = -torch.min(surr1, surr2) + 0.5*self.MseLoss(state_values, rewards) - 0.01*dist_entropy
-            
-            # take gradient step
-            self.optimizer.zero_grad()
-            loss.mean().backward()
-            self.optimizer.step()
-        
-        # Copy new weights into old policy:
-        self.policy_old.load_state_dict(self.policy.state_dict())
-        
-def main():
-    ############## Hyperparameters ##############
-    env_name = "LunarLander-v2"
-    # creating environment
-    env = gym.make(env_name)
-    state_dim = env.observation_space.shape[0]
-    action_dim = 4
-    render = False
-    solved_reward = 230         # stop training if avg_reward > solved_reward
-    log_interval = 20           # print avg reward in the interval
-    max_episodes = 50000        # max training episodes
-    max_timesteps = 300         # max timesteps in one episode
-    n_latent_var = 64           # number of variables in hidden layer
-    update_timestep = 2000      # update policy every n timesteps
-    lr = 0.002
-    betas = (0.9, 0.999)
-    gamma = 0.99                # discount factor
-    K_epochs = 4                # update policy for K epochs
-    eps_clip = 0.2              # clip parameter for PPO
-    random_seed = None
-    #############################################
-    
-    if random_seed:
-        torch.manual_seed(random_seed)
-        env.seed(random_seed)
-    
-    memory = Memory()
-    ppo = PPO(state_dim, action_dim, n_latent_var, lr, betas, gamma, K_epochs, eps_clip)
-    print(lr,betas)
-    
-    # logging variables
-    running_reward = 0
-    avg_length = 0
-    timestep = 0
-    
-    # training loop
-    for i_episode in range(1, max_episodes+1):
-        state = env.reset()
-        for t in range(max_timesteps):
-            timestep += 1
-            
-            # Running policy_old:
-            action = ppo.policy_old.act(state, memory)
-            state, reward, done, _ = env.step(action)
-            
-            # Saving reward and is_terminal:
-            memory.rewards.append(reward)
-            memory.is_terminals.append(done)
-            
-            # update if its time
-            if timestep % update_timestep == 0:
-                ppo.update(memory)
-                memory.clear_memory()
-                timestep = 0
-            
-            running_reward += reward
-            if render:
-                env.render()
-            if done:
-                break
-                
-        avg_length += t
-        
-        # stop training if avg_reward > solved_reward
-        if running_reward > (log_interval*solved_reward):
-            print("Solved!")
-            torch.save(ppo.policy.state_dict(), './PPO_{}.pth'.format(env_name))
-            break
-            
-        # logging
-        if i_episode % log_interval == 0:
-            avg_length = int(avg_length/log_interval)
-            running_reward = int((running_reward/log_interval))
-            
-            print('Episode {} \tAvg Length: {} \tReward: {}'.format(i_episode, avg_length, running_reward))
-            running_reward = 0
-            avg_length = 0
-            
-if __name__ == '__main__':
-    main()
+    ppo_update(ppo_epochs, mini_batch_size, states, actions, log_probs, returns, advantage)
