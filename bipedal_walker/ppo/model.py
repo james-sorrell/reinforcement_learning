@@ -1,35 +1,57 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal
-
-def init_weights(m):
-    if isinstance(m, nn.Linear):
-        nn.init.normal_(m.weight, mean=0., std=0.1)
-        nn.init.constant_(m.bias, 0.1)
-        
+from torch.distributions import MultivariateNormal
 
 class ActorCritic(nn.Module):
-    def __init__(self, num_inputs, num_outputs, hidden_size, std=0.0):
+    def __init__(self, state_dim, action_dim, action_std, device):
         super(ActorCritic, self).__init__()
-        
+        # action mean range -1 to 1
+        self.device = device
+        self.actor =  nn.Sequential(
+                nn.Linear(state_dim, 64),
+                nn.Tanh(),
+                nn.Linear(64, 32),
+                nn.Tanh(),
+                nn.Linear(32, action_dim),
+                nn.Tanh()
+                )
+        # critic
         self.critic = nn.Sequential(
-            nn.Linear(num_inputs, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, 1)
-        )
+                nn.Linear(state_dim, 64),
+                nn.Tanh(),
+                nn.Linear(64, 32),
+                nn.Tanh(),
+                nn.Linear(32, 1)
+                )
+        self.action_var = torch.full((action_dim,), action_std*action_std).to(self.device)
+
+    def forward(self):
+        raise NotImplementedError
+
+    def act(self, state, memory):
+        action_mean = self.actor(state)
+        cov_mat = torch.diag(self.action_var).to(self.device)
         
-        self.actor = nn.Sequential(
-            nn.Linear(num_inputs, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, num_outputs),
-        )
-        self.log_std = nn.Parameter(torch.ones(1, num_outputs) * std)
+        dist = MultivariateNormal(action_mean, cov_mat)
+        action = dist.sample()
+        action_logprob = dist.log_prob(action)
         
-        self.apply(init_weights)
+        memory.states.append(state)
+        memory.actions.append(action)
+        memory.logprobs.append(action_logprob)
         
-    def forward(self, x):
-        value = self.critic(x)
-        mu    = self.actor(x)
-        std   = self.log_std.exp().expand_as(mu)
-        dist  = Normal(mu, std)
-        return dist, value
+        return action.detach()
+    
+    def evaluate(self, state, action):   
+        action_mean = self.actor(state)
+        
+        action_var = self.action_var.expand_as(action_mean)
+        cov_mat = torch.diag_embed(action_var).to(self.device)
+        
+        dist = MultivariateNormal(action_mean, cov_mat)
+        
+        action_logprobs = dist.log_prob(action)
+        dist_entropy = dist.entropy()
+        state_value = self.critic(state)
+        
+        return action_logprobs, torch.squeeze(state_value), dist_entropy
