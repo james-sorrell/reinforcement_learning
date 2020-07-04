@@ -1,4 +1,5 @@
 import gym
+import torch
 from agent import PPO, Memory
 import numpy as np
 
@@ -67,7 +68,7 @@ def main():
         
         # stop training if avg_reward > solved_reward
         if running_reward > (log_interval*solved_reward):
-            print("########## Solved! ##########")
+            print("\tSolved.")
             torch.save(ppo.policy.state_dict(), './PPO_continuous_solved_{}.pth'.format(env_name))
             break
         
