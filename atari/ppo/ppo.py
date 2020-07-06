@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.distributions import Categorical
 import gym
 
@@ -24,49 +25,76 @@ class Memory:
 class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, n_latent_var):
         super(ActorCritic, self).__init__()
-
+        
+        self.conv1 = nn.Conv2d(state_dim, 32, 8, stride=4)
+        self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, 3, stride=1)
+        fc_input_dims = self.calculate_conv_output_dims(state_dim)
         # actor
-        self.action_layer = nn.Sequential(
-                nn.Linear(state_dim, n_latent_var),
-                nn.Tanh(),
-                nn.Linear(n_latent_var, n_latent_var),
-                nn.Tanh(),
-                nn.Linear(n_latent_var, action_dim),
-                nn.Softmax(dim=-1)
-                )
-        
+        self.act_fc1 = nn.Linear(fc_input_dims, 512)
+        self.act_fc2 = nn.Linear(512, 300)
+        self.act_fc3 = nn.Linear(300, action_dim)
         # critic
-        self.value_layer = nn.Sequential(
-                nn.Linear(state_dim, n_latent_var),
-                nn.Tanh(),
-                nn.Linear(n_latent_var, n_latent_var),
-                nn.Tanh(),
-                nn.Linear(n_latent_var, 1)
-                )
-        
+        self.crt_fc1 = nn.Linear(fc_input_dims, 512)
+        self.crt_fc2 = nn.Linear(512, 300)
+        self.crt_fc3 = nn.Linear(300, 1)
+
+    def calculate_conv_output_dims(self, input_dimensions):
+        state = torch.zeros(1, *input_dimensions)
+        dims = self.conv1(state)
+        dims = self.conv2(dims)
+        dims = self.conv3(dims)
+        return int(np.prod(dims.size()))
+
     def forward(self):
         raise NotImplementedError
         
-    def act(self, state, memory):
+    def getActionProbs(self, state):
         state = torch.from_numpy(state).float().to(device) 
-        action_probs = self.action_layer(state)
+        conv1 = F.relu(self.conv1(state))
+        conv2 = F.relu(self.conv2(conv1))
+        conv3 = F.relu(self.conv3(conv2))
+        # conv3 shape is BS x num_filters x H x W
+        # we want to flatten this before passing
+        # into the fully connected layers
+        conv_state = conv3.view(conv3.size()[0], -1)
+        act_fc1 = F.relu(self.act_fc1(conv_state))
+        act_fc2 = self.act_fc2(act_fc1)
+        actions = self.act_fc3(act_fc2)
+        action_probs = F.relu(actions)
+        return action_probs
+
+    def act(self, state, memory):
+        action_probs = self.getActionsProbs(state)
         dist = Categorical(action_probs)
         action = dist.sample()
-        
         memory.states.append(state)
         memory.actions.append(action)
         memory.logprobs.append(dist.log_prob(action))
-        
         return action.item()
+
+    def getStateValue(self, state):
+        state = torch.from_numpy(state).float().to(device) 
+        conv1 = F.relu(self.conv1(state))
+        conv2 = F.relu(self.conv2(conv1))
+        conv3 = F.relu(self.conv3(conv2))
+        # conv3 shape is BS x num_filters x H x W
+        # we want to flatten this before passing
+        # into the fully connected layers
+        conv_state = conv3.view(conv3.size()[0], -1)
+        crt_fc1 = F.relu(self.crt_fc1(conv_state))
+        crt_fc2 = self.crt_fc2(crt_fc1)
+        value = self.crt_fc3(crt_fc2)
+        return value
     
     def evaluate(self, state, action):
-        action_probs = self.action_layer(state)
+        action_probs = self.getActionsProbs(state)
         dist = Categorical(action_probs)
         
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
         
-        state_value = self.value_layer(state)
+        state_value = self.getStateValue(state)
         
         return action_logprobs, torch.squeeze(state_value), dist_entropy
         
@@ -128,7 +156,7 @@ class PPO:
         
 def main():
     ############## Hyperparameters ##############
-    env_name = "LunarLander-v2"
+    env_name = "PongNoFrameskip-v4"
     # creating environment
     env = gym.make(env_name)
     state_dim = env.observation_space.shape[0]
