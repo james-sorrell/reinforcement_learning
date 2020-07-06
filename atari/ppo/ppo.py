@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Categorical
 import gym
+import numpy as np
+from utils import plot_learning_curve, make_env
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print("Device: {}".format(device))
@@ -25,8 +27,8 @@ class Memory:
 class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, n_latent_var):
         super(ActorCritic, self).__init__()
-        
-        self.conv1 = nn.Conv2d(state_dim, 32, 8, stride=4)
+        print("State Dimensions: {}".format(state_dim))
+        self.conv1 = nn.Conv2d(state_dim[0], 32, 8, stride=4)
         self.conv2 = nn.Conv2d(32, 64, 4, stride=2)
         self.conv3 = nn.Conv2d(64, 64, 3, stride=1)
         fc_input_dims = self.calculate_conv_output_dims(state_dim)
@@ -65,7 +67,7 @@ class ActorCritic(nn.Module):
         return action_probs
 
     def act(self, state, memory):
-        action_probs = self.getActionsProbs(state)
+        action_probs = self.getActionProbs(state)
         dist = Categorical(action_probs)
         action = dist.sample()
         memory.states.append(state)
@@ -88,7 +90,7 @@ class ActorCritic(nn.Module):
         return value
     
     def evaluate(self, state, action):
-        action_probs = self.getActionsProbs(state)
+        action_probs = self.getActionProbs(state)
         dist = Categorical(action_probs)
         
         action_logprobs = dist.log_prob(action)
@@ -158,9 +160,11 @@ def main():
     ############## Hyperparameters ##############
     env_name = "PongNoFrameskip-v4"
     # creating environment
-    env = gym.make(env_name)
-    state_dim = env.observation_space.shape[0]
-    action_dim = 4
+    #env = gym.make(env_name)
+    env = make_env(env_name=env_name, repeat=4, clip_reward=False,
+                    no_ops=0, fire_first=False)
+    state_dim = env.observation_space.shape
+    action_dim = env.action_space.n
     render = False
     solved_reward = 230         # stop training if avg_reward > solved_reward
     log_interval = 20           # print avg reward in the interval
