@@ -52,7 +52,6 @@ class ActorCritic(nn.Module):
         raise NotImplementedError
         
     def getActionProbs(self, state):
-        state = torch.from_numpy(state).float().to(device) 
         conv1 = F.relu(self.conv1(state))
         conv2 = F.relu(self.conv2(conv1))
         conv3 = F.relu(self.conv3(conv2))
@@ -63,20 +62,22 @@ class ActorCritic(nn.Module):
         act_fc1 = F.relu(self.act_fc1(conv_state))
         act_fc2 = self.act_fc2(act_fc1)
         actions = self.act_fc3(act_fc2)
-        action_probs = F.relu(actions)
+        #print(actions.shape)
+        action_probs = F.softmax(actions, dim=1)
         return action_probs
 
     def act(self, state, memory):
-        action_probs = self.getActionProbs(state)
+        rs_state = np.expand_dims(state, axis=0)
+        rs_state = torch.from_numpy(rs_state).float().to(device) 
+        action_probs = self.getActionProbs(rs_state)
         dist = Categorical(action_probs)
         action = dist.sample()
-        memory.states.append(state)
+        memory.states.append(torch.from_numpy(state).float().to(device))
         memory.actions.append(action)
         memory.logprobs.append(dist.log_prob(action))
         return action.item()
 
     def getStateValue(self, state):
-        state = torch.from_numpy(state).float().to(device) 
         conv1 = F.relu(self.conv1(state))
         conv2 = F.relu(self.conv2(conv1))
         conv3 = F.relu(self.conv3(conv2))
@@ -92,12 +93,9 @@ class ActorCritic(nn.Module):
     def evaluate(self, state, action):
         action_probs = self.getActionProbs(state)
         dist = Categorical(action_probs)
-        
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
-        
         state_value = self.getStateValue(state)
-        
         return action_logprobs, torch.squeeze(state_value), dist_entropy
         
 class PPO:
