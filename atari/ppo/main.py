@@ -1,6 +1,9 @@
 import argparse
 import gym
+import random
 import tensorflow as tf
+import numpy as np
+from tqdm import trange
 from tensorflow import keras
 from network import SharedModel
 from model import network, policy_tail, value_tail
@@ -26,6 +29,7 @@ gradient_max = 10.0
 start_t = 0
 checkpoint_filename = "./ppo-model.ckpt"
 log_dir = "./tb_log"
+SMALL_NUM = 1e-8
 
 def main():
     env_name = "PongNoFrameskip-v4"
@@ -36,78 +40,98 @@ def main():
     # Hard-coding pre-processing step shape; could read it from an example output instead?
     obs_shape = (84, 84, 4)
     num_actions = unused_env.action_space.n
-    network = SharedModel(obs_shape, num_actions)
+    model = SharedModel(obs_shape, num_actions)
 
     t = start_t
     last_save = 0
     actors = []
-    for _ in range(num_actors):
-        actors.append(EnvActor(SubProcessEnv(env_name), network)
 
-    while t <= max_steps:
-        for _ in range(horizon):
+    for ii in range(num_actors):
+        actors.append(EnvActor(SubProcessEnv(env_name), model, num_actions))
+
+    while(t <= max_steps):
+        for ii in range(horizon):
             for actor in actors:
                 actor.step_env(t)
             t += 1
 
+        for actor in actors:
+            actor.calculate_horizon_advantages(t)
+
+        # Construct randomly sampled (without replacement) mini-batches.
+        obs_horizon = []
+        act_horizon = []
+        policy_horizon = []
+        adv_est_horizon = []
+        val_est_horizon = []
+
+        for actor in actors:
+            obs_a, act_a, policy_a, adv_est_a, val_est_a = actor.get_horizon(t)
+            obs_horizon.extend(obs_a)
+            act_horizon.extend(act_a)
+            policy_horizon.extend(policy_a)
+            adv_est_horizon.extend(adv_est_a)
+            val_est_horizon.extend(val_est_a)
+
+        # Normalizing advantage estimates.
+        # NOTE: Adding this significantly improved performance
+        # NOTE: Moved this out of each individual actor, so that advantages for the whole batch are normalized with each other.
+        adv_est_horizon = np.array(adv_est_horizon)
+        adv_est_horizon = (adv_est_horizon - np.mean(adv_est_horizon)) / (np.std(adv_est_horizon) + SMALL_NUM)
+
+        num_samples = len(obs_horizon)
+        indices = list(range(num_samples))
+        for e in range(optim_epochs):
+            random.shuffle(indices)
+            ii = 0
+            # TODO: Don't crash if batch_size is not a divisor of total sample count.
+            while ii < num_samples:
+                obs_batch = []
+                act_batch = []
+                policy_batch = []
+                adv_batch = []
+                value_sample_batch = []
+
+                for _ in range(batch_size):
+                    index = indices[ii]
+                    obs_batch.append(obs_horizon[index].__array__())
+                    act_batch.append(act_horizon[index].__array__())
+                    policy_batch.append(policy_horizon[index].__array__())
+                    adv_batch.append(adv_est_horizon[index].__array__())
+                    value_sample_batch.append(val_est_horizon[index])
+                    ii += 1                    
+
+                def alpha_anneal(t):
+                    return np.maximum(1.0 - (float(t) / float(max_steps)), 0.0)
+
+                total_loss = model.train(np.array(obs_batch),
+                            np.array(act_batch), 
+                            np.array(policy_batch), 
+                            np.array(adv_batch), 
+                            np.array(value_sample_batch), 
+                            alpha_anneal(t))
+
+        for actor in actors:
+            actor.flush(t)
+
+        if t-last_save > 10000:
+            print("Saving network")
+            model.network.save(checkpoint_filename)
+            last_save = t
+
+        all_ep_rewards = []
+        for actor in actors:
+            all_ep_rewards.extend(actor.episode_rewards)                 
+
+        print("All Episode Rewards Length: {}".format(len(all_ep_rewards)))
+
+        if len(all_ep_rewards) >= 10:
+            print("T: %d" % (t,))
+            print("AVG Reward: %f" % (np.mean(all_ep_rewards),))
+            print("MIN Reward: %f" % (np.amin(all_ep_rewards),))
+            print("MAX Reward: %f" % (np.amax(all_ep_rewards),))
             for actor in actors:
-                actor.calculate_horizon_advantages(t)
-
-            # Construct randomly sampled (without replacement) mini-batches.
-            obs_horizon = []
-            act_horizon = []
-            policy_horizon = []
-            adv_est_horizon = []
-            val_est_horizon = []
-
-            for actor in actors:
-                obs_a, act_a, policy_a, adv_est_a, val_est_a = actor.get_horizon(t)
-                obs_horizon.extend(obs_a)
-                act_horizon.extend(act_a)
-                policy_horizon.extend(policy_a)
-                adv_est_horizon.extend(adv_est_a)
-                val_est_horizon.extend(val_est_a)
-
-            # Normalizing advantage estimates.
-            # NOTE: Adding this significantly improved performance
-            # NOTE: Moved this out of each individual actor, so that advantages for the whole batch are normalized with each other.
-            adv_est_horizon = np.array(adv_est_horizon)
-            adv_est_horizon = (adv_est_horizon - np.mean(adv_est_horizon)) / (np.std(adv_est_horizon) + SMALL_NUM)
-
-            num_samples = len(obs_horizon)
-            indices = list(range(num_samples))
-            for e in range(optim_epochs):
-                random.shuffle(indices)
-                ii = 0
-                # TODO: Don't crash if batch_size is not a divisor of total sample count.
-                while ii < num_samples:
-                    obs_batch = []
-                    act_batch = []
-                    policy_batch = []
-                    adv_batch = []
-                    value_sample_batch = []
-
-                    for b in range(batch_size):
-                        index = indices[ii]
-                        obs_batch.append(obs_horizon[index])
-                        act_batch.append(act_horizon[index])
-                        policy_batch.append(policy_horizon[index])
-                        adv_batch.append(adv_est_horizon[index])
-                        value_sample_batch.append(val_est_horizon[index])
-                        ii += 1                    
-
-                    update_feed = {
-                        obs_ph: obs_batch,
-                        act_ph: act_batch,
-                        policy_old_ph: policy_batch,
-                        advantage_estimate_ph: adv_batch,
-                        value_sample_estimate_ph: value_sample_batch,
-                        alpha_ph: alpha_anneal(t)
-                    }
-                    
-                    _, summary = sess.run([update_op, summary_op], update_feed)
-                    logger.add_summary(summary, t)
-
+                actor.episode_rewards = []                    
 
 if __name__ == '__main__':
     main()

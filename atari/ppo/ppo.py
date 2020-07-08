@@ -40,29 +40,6 @@ discrete = True
 
 
 
-class TimeIndexedList(object):
-    def __init__(self, first_t=0):
-        self.first_t = first_t
-        self.list = []
-
-    # For flushing so that we don't keep unnecessary history forever.
-    def flush_through(self, t):
-        to_remove = t - self.first_t + 1
-        if to_remove > 0:
-            self.list = self.list[to_remove:]
-            self.first_t = t + 1
-
-    def append(self, elem):
-        self.list.append(elem)
-
-    def get(self, t):
-        return self.list[t - self.first_t]
-
-    def future_length(self):
-        return len(self.list)
-
-    def get_range(self, t, length):
-        return self.list[(t - self.first_t):(t - self.first_t + length)]
 
 # Data relevant to executing and collecting samples from a single environment execution.
 class EnvActor(object):

@@ -11,19 +11,19 @@ from tensorflow import keras
 
 def sharedNetwork(input):
     out = keras.layers.Conv2D(filters=32, kernel_size=8, 
-                        stride=4, activation_fn=tf.nn.relu)(input)
+                        strides=4, activation=tf.nn.relu)(input)
     out = keras.layers.Conv2D(filters=64, kernel_size=4,
-                        stride=2, activation_fn=tf.nn.relu)(out)
+                        strides=2, activation=tf.nn.relu)(out)
     out = keras.layers.Conv2D(filters=64, kernel_size=3,
-                        stride=1, activation_fn=tf.nn.relu)(out)
-    out = keras.layers.flatten(out)
-    return keras.layers.Dense(units=512, activation_fn=tf.nn.relu)(out)
+                        strides=1, activation=tf.nn.relu)(out)
+    out = keras.layers.Flatten()(out)
+    return keras.layers.Dense(units=512, activation=tf.nn.relu)(out)
 
 def valueTail(shared):
-    return tf.squeeze(layers.fully_connected(shared, num_outputs=1, activation_fn=None), axis=1)
+    return tf.squeeze(keras.layers.Dense(units=1, activation=None)(shared), axis=1)
 
-def policyTail(shared):
-    return tf.nn.softmax(layers.fully_connected(shared, num_outputs=num_actions, activation_fn=None), axis=1)
+def policyTail(shared, num_actions):
+    return tf.squeeze(keras.layers.Dense(units=num_actions, activation=tf.nn.softmax)(shared))
 
 class SharedModel:
 
@@ -36,13 +36,14 @@ class SharedModel:
         self.c_val_loss = value_loss_coefficient
         self.c_ent_loss = entropy_loss_coefficient
         self.base_lr = base_learning_rate
+        self.max_grad_norm = gradient_max
         #
-        self.X = keras.Input(dtype=tf.float32, shape=(None,) + self.obs_shape)
+        self.X = keras.Input(dtype=tf.float32, shape=(self.obs_shape))
         # Shared
         shared = sharedNetwork(self.X)
         # Policy / Value
         value = valueTail(shared)
-        policy = policyTail(shared)
+        policy = policyTail(shared, num_actions)
         #
         self.network = tf.keras.Model(inputs=self.X, outputs=[value, policy])
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.get_lr, epsilon=eps)
@@ -50,7 +51,8 @@ class SharedModel:
     def get_lr(self):
         return self.base_lr*self.alpha
 
-    def train(self, states, alpha, action, policy_old, advantage, reward):
+    def train(self, states, action, policy_old, advantage, value_estimate, alpha):
+        
         self.alpha = alpha
         # Compute Gradients
         with tf.GradientTape() as t:
@@ -66,11 +68,11 @@ class SharedModel:
             entropy_loss = -tf.math.reduce_sum(-policy * tf.math.log(policy), axis=1)
             # NOTE: Huge bug, needed to maximize the minimum, not minimize it.  Without the minus sign, is not a loss.
             clip_loss = -tf.math.minimum(prob_ratio * advantage, clipped_prob_ratio * advantage)
-            # NOTE: Need a better name than reward, this name is not right
-            value_loss = tf.math.square(value - reward)
+            # NOTE: Need a better name than value estimate, they are both value estimtates
+            value_loss = tf.math.square(value - value_estimate)
             total_loss = tf.math.reduce_mean(clip_loss + self.c_val_loss * value_loss + self.c_ent_loss * entropy_loss)
             # NOTE: Took epsilon from OpenAI Baselines ppo2.
         grads = t.gradient(total_loss, self.network.trainable_weights)
         grads, _ = tf.clip_by_global_norm(grads, self.max_grad_norm)
         self.optimizer.apply_gradients(zip(grads, self.network.trainable_weights))
-        return total_loss, value_loss, clip_loss, entropy_loss   
+        return total_loss #, value_loss, clip_loss, entropy_loss   
