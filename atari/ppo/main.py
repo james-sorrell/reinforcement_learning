@@ -6,7 +6,6 @@ import numpy as np
 from tqdm import trange
 from tensorflow import keras
 from network import SharedModel
-from model import network, policy_tail, value_tail
 from subproc_env import EnvActor, SubProcessEnv
 
 # Some parameters taken from OpenAI 
@@ -123,13 +122,11 @@ def main():
         for actor in actors:
             all_ep_rewards.extend(actor.episode_rewards)                 
 
-        print("All Episode Rewards Length: {}".format(len(all_ep_rewards)))
-
         if len(all_ep_rewards) >= 10:
             print("T: %d" % (t,))
-            print("AVG Reward: %f" % (np.mean(all_ep_rewards),))
-            print("MIN Reward: %f" % (np.amin(all_ep_rewards),))
-            print("MAX Reward: %f" % (np.amax(all_ep_rewards),))
+            print("\tAVG Reward: %f" % (np.mean(all_ep_rewards),))
+            print("\tMIN Reward: %f" % (np.amin(all_ep_rewards),))
+            print("\tMAX Reward: %f" % (np.amax(all_ep_rewards),))
             for actor in actors:
                 actor.episode_rewards = []                    
 
